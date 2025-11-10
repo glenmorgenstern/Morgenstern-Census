@@ -69,6 +69,7 @@ plt.title("Commute Time Category vs Earnings")
 plt.show()
 
 # %% 
+# Multinomial Logistic Regression with Backward Stepwise Selection
 import warnings
 warnings.filterwarnings("ignore")
 
@@ -235,6 +236,7 @@ plt.show()
 # In short, multinomial logit is a strong pedagogical and diagnostic tool for understanding variable importance, but as we move forward, more flexible methods (KNN, gradient boosting, etc.) will capture nonlinearities and complex interactions that this model can’t.
 
 # %%
+# K-Nearest Neighbors (KNN) with PCA
 import warnings
 warnings.filterwarnings("ignore")
 
@@ -248,7 +250,7 @@ from sklearn.metrics import accuracy_score, f1_score, classification_report, roc
 import matplotlib.pyplot as plt
 from collections import Counter
 
-# Step 1: Sample 100,000 rows
+# Step 1: Sample 50,000 rows
 df_sample = df.sample(n=50000, random_state=42)
 
 # Step 2: Collapse high-cardinality categorical variables
@@ -280,16 +282,37 @@ y_balanced = y_codes.iloc[balanced_idx]
 
 print("Balanced class counts:", Counter(y_balanced))
 
-#  Step 6: Scale predictors 
+# Step 6: Scale predictors
 scaler = StandardScaler()
 X_scaled = scaler.fit_transform(X_balanced)
 
-#  Step 7: PCA (retain 95% variance)
+# Step 7: PCA (retain 95% variance)
 pca = PCA(n_components=0.95, random_state=42)
 X_pca = pca.fit_transform(X_scaled)
 print("Number of PCA components retained:", X_pca.shape[1])
 
-# Step 8: Train/test split 
+# --- PCA Visualization 1: Cumulative explained variance ---
+cum_var = np.cumsum(pca.explained_variance_ratio_)
+plt.figure(figsize=(8,5))
+plt.plot(range(1, len(cum_var)+1), cum_var, marker='o')
+plt.axhline(y=0.95, color='r', linestyle='--', label='95% threshold')
+plt.xlabel("Number of Principal Components")
+plt.ylabel("Cumulative Explained Variance")
+plt.title("Cumulative Explained Variance by PCA Components")
+plt.legend()
+plt.grid(True)
+plt.show()
+
+# --- PCA Visualization 2: Scatterplot of first two PCs ---
+plt.figure(figsize=(8,6))
+scatter = plt.scatter(X_pca[:,0], X_pca[:,1], c=y_balanced, cmap='tab10', alpha=0.6)
+plt.xlabel("PC1")
+plt.ylabel("PC2")
+plt.title("Scatterplot of First Two Principal Components")
+plt.colorbar(scatter, label="Commute Category")
+plt.show()
+
+# Step 8: Train/test split
 X_train, X_test, y_train, y_test = train_test_split(
     X_pca, y_balanced, test_size=0.2, random_state=42, stratify=y_balanced
 )
@@ -333,6 +356,7 @@ plt.title("Multiclass ROC (OvR) for Best Balanced KNN Model")
 plt.legend()
 plt.show()
 
+# Our PCA cumulative explained variance plot shows that nearly 50 components are needed to capture 95% of the variance, indicating a complex feature space. That is, any one feature does not explain a bulk of the variance (the first one only explains around 10%). The scatterplot of the first two PCs reveals some clustering by commute time category, but with significant overlap, suggesting that linear separability is limited.
 # We see that k=5 gives the best test accuracy of around 30% after PCA dimensionality reduction, which is comparable to and even slightly worse than the multinomial logistic regression model earlier. The ROC curves show moderate AUC values around 0.5-0.6 for most classes, indicating the model captures some patterns but isn't really an improvement on multinomial regression. KNN benefits from PCA by reducing noise and focusing on key variance directions, but it still struggles with the complexity of predicting multiple commute time categories.
 
 # %%
@@ -639,6 +663,123 @@ plt.plot([0,1],[0,1],'k--')
 plt.xlabel("False Positive Rate")
 plt.ylabel("True Positive Rate")
 plt.title("Multiclass ROC (OvR) for XGBoost")
+plt.legend()
+plt.show()
+
+import matplotlib.pyplot as plt
+from xgboost import plot_importance
+
+# Plot top 20 features ranked by gain
+plt.figure(figsize=(10,8))
+plot_importance(best_xgb, importance_type='gain', max_num_features=20, height=0.6)
+plt.title("Top 20 Feature Importances by Gain (XGBoost)")
+plt.tight_layout()
+plt.show()
+
+# %%
+# SVM with PCA
+import warnings
+warnings.filterwarnings("ignore")
+
+import pandas as pd
+import numpy as np
+from sklearn.model_selection import train_test_split, GridSearchCV
+from sklearn.preprocessing import StandardScaler, label_binarize
+from sklearn.decomposition import PCA
+from sklearn.svm import SVC
+from sklearn.metrics import accuracy_score, classification_report, roc_curve, auc, f1_score
+import matplotlib.pyplot as plt
+from collections import Counter
+
+# --- Step 1: Sample 100,000 rows ---
+df_sample = df.sample(n=100000, random_state=42)
+
+# --- Step 2: Collapse high-cardinality categorical variables ---
+def collapse_categories(series, top_n=4):
+    top_cats = series.value_counts().nlargest(top_n).index
+    return series.where(series.isin(top_cats), other='Other')
+
+for col in ['dIndustry','dOccup','dAncstry1','dAncstry2','iLang1']:
+    if col in df_sample.columns:
+        df_sample[col] = collapse_categories(df_sample[col], top_n=4)
+
+# --- Step 3: Target and predictors ---
+y = df_sample['dTravtime'].astype('category')
+predictors = [c for c in df_sample.columns if c not in ['dTravtime','caseid']]
+
+# --- Step 4: One-hot encode ---
+X = pd.get_dummies(df_sample[predictors], drop_first=True)
+y_codes = y.cat.codes
+
+# --- Step 5: Balance classes (undersample majority) ---
+counts = Counter(y_codes)
+min_count = min(counts.values())
+balanced_idx = np.hstack([
+    np.random.choice(np.where(y_codes==cls)[0], min_count, replace=False)
+    for cls in counts.keys()
+])
+X_balanced = X.iloc[balanced_idx]
+y_balanced = y_codes.iloc[balanced_idx]
+
+print("Balanced class counts:", Counter(y_balanced))
+
+# --- Step 6: Scale predictors ---
+scaler = StandardScaler()
+X_scaled = scaler.fit_transform(X_balanced)
+
+# --- Step 7: PCA (retain 95% variance) ---
+pca = PCA(n_components=0.95, random_state=42)
+X_pca = pca.fit_transform(X_scaled)
+print("Number of PCA components retained:", X_pca.shape[1])
+
+# --- Step 8: Train/test split ---
+X_train, X_test, y_train, y_test = train_test_split(
+    X_pca, y_balanced, test_size=0.2, random_state=42, stratify=y_balanced
+)
+
+# --- Step 9: Expanded hyperparameter grid for SVM (RBF kernel) ---
+param_grid = {
+    "C": [0.1, 0.5, 1, 2, 5, 10, 20, 50],
+    "gamma": [0.001, 0.005, 0.01, 0.05, 0.1, "scale"]
+}
+
+svm = SVC(kernel="rbf", probability=True, class_weight="balanced", random_state=42)
+
+grid = GridSearchCV(
+    estimator=svm,
+    param_grid=param_grid,
+    cv=3,
+    scoring="f1_macro",
+    n_jobs=-1
+)
+grid.fit(X_train, y_train)
+
+best_svm = grid.best_estimator_
+print("Best parameters:", grid.best_params_)
+print("Best macro F1 (CV):", grid.best_score_)
+
+# --- Step 10: Evaluate best model ---
+y_pred = best_svm.predict(X_test)
+acc = accuracy_score(y_test, y_pred)
+print("SVM (RBF) test accuracy:", acc)
+print("Classification report:")
+print(classification_report(y_test, y_pred))
+
+# --- Step 11: ROC curves (OvR) ---
+y_test_bin = label_binarize(y_test, classes=np.unique(y_test))
+y_score = best_svm.predict_proba(X_test)
+
+fpr, tpr, roc_auc = {}, {}, {}
+plt.figure(figsize=(8,6))
+for i in range(y_test_bin.shape[1]):
+    fpr[i], tpr[i], _ = roc_curve(y_test_bin[:, i], y_score[:, i])
+    roc_auc[i] = auc(fpr[i], tpr[i])
+    plt.plot(fpr[i], tpr[i], label=f"Class {i} (AUC = {roc_auc[i]:.2f})")
+
+plt.plot([0,1],[0,1],'k--')
+plt.xlabel("False Positive Rate")
+plt.ylabel("True Positive Rate")
+plt.title("Multiclass ROC (OvR) for Tuned SVM (RBF + PCA)")
 plt.legend()
 plt.show()
 
