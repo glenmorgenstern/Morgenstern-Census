@@ -291,7 +291,7 @@ pca = PCA(n_components=0.95, random_state=42)
 X_pca = pca.fit_transform(X_scaled)
 print("Number of PCA components retained:", X_pca.shape[1])
 
-# --- PCA Visualization 1: Cumulative explained variance ---
+#  PCA Visualization 1: Cumulative explained variance 
 cum_var = np.cumsum(pca.explained_variance_ratio_)
 plt.figure(figsize=(8,5))
 plt.plot(range(1, len(cum_var)+1), cum_var, marker='o')
@@ -303,7 +303,7 @@ plt.legend()
 plt.grid(True)
 plt.show()
 
-# --- PCA Visualization 2: Scatterplot of first two PCs ---
+#  PCA Visualization 2: Scatterplot of first two PCs 
 plt.figure(figsize=(8,6))
 scatter = plt.scatter(X_pca[:,0], X_pca[:,1], c=y_balanced, cmap='tab10', alpha=0.6)
 plt.xlabel("PC1")
@@ -691,10 +691,10 @@ from sklearn.metrics import accuracy_score, classification_report, roc_curve, au
 import matplotlib.pyplot as plt
 from collections import Counter
 
-# --- Step 1: Sample 100,000 rows ---
+#  Step 1: Sample 100,000 rows 
 df_sample = df.sample(n=100000, random_state=42)
 
-# --- Step 2: Collapse high-cardinality categorical variables ---
+#  Step 2: Collapse high-cardinality categorical variables 
 def collapse_categories(series, top_n=4):
     top_cats = series.value_counts().nlargest(top_n).index
     return series.where(series.isin(top_cats), other='Other')
@@ -703,15 +703,15 @@ for col in ['dIndustry','dOccup','dAncstry1','dAncstry2','iLang1']:
     if col in df_sample.columns:
         df_sample[col] = collapse_categories(df_sample[col], top_n=4)
 
-# --- Step 3: Target and predictors ---
+#  Step 3: Target and predictors 
 y = df_sample['dTravtime'].astype('category')
 predictors = [c for c in df_sample.columns if c not in ['dTravtime','caseid']]
 
-# --- Step 4: One-hot encode ---
+#  Step 4: One-hot encode 
 X = pd.get_dummies(df_sample[predictors], drop_first=True)
 y_codes = y.cat.codes
 
-# --- Step 5: Balance classes (undersample majority) ---
+#  Step 5: Balance classes (undersample majority) 
 counts = Counter(y_codes)
 min_count = min(counts.values())
 balanced_idx = np.hstack([
@@ -723,24 +723,24 @@ y_balanced = y_codes.iloc[balanced_idx]
 
 print("Balanced class counts:", Counter(y_balanced))
 
-# --- Step 6: Scale predictors ---
+#  Step 6: Scale predictors 
 scaler = StandardScaler()
 X_scaled = scaler.fit_transform(X_balanced)
 
-# --- Step 7: PCA (retain 95% variance) ---
+#  Step 7: PCA (retain 95% variance) 
 pca = PCA(n_components=0.95, random_state=42)
 X_pca = pca.fit_transform(X_scaled)
 print("Number of PCA components retained:", X_pca.shape[1])
 
-# --- Step 8: Train/test split ---
+#  Step 8: Train/test split 
 X_train, X_test, y_train, y_test = train_test_split(
     X_pca, y_balanced, test_size=0.2, random_state=42, stratify=y_balanced
 )
 
-# --- Step 9: Expanded hyperparameter grid for SVM (RBF kernel) ---
+#  Step 9: Expanded hyperparameter grid for SVM (RBF kernel) 
 param_grid = {
-    "C": [0.1, 0.5, 1, 2, 5, 10, 20, 50],
-    "gamma": [0.001, 0.005, 0.01, 0.05, 0.1, "scale"]
+    "C": [0.1, 0.5, 1, 5, 10, 20],
+    "gamma": [0.001, 0.005, 0.01, 0.1, "scale"]
 }
 
 svm = SVC(kernel="rbf", probability=True, class_weight="balanced", random_state=42)
@@ -758,14 +758,14 @@ best_svm = grid.best_estimator_
 print("Best parameters:", grid.best_params_)
 print("Best macro F1 (CV):", grid.best_score_)
 
-# --- Step 10: Evaluate best model ---
+#  Step 10: Evaluate best model 
 y_pred = best_svm.predict(X_test)
 acc = accuracy_score(y_test, y_pred)
 print("SVM (RBF) test accuracy:", acc)
 print("Classification report:")
 print(classification_report(y_test, y_pred))
 
-# --- Step 11: ROC curves (OvR) ---
+#  Step 11: ROC curves (OvR) 
 y_test_bin = label_binarize(y_test, classes=np.unique(y_test))
 y_score = best_svm.predict_proba(X_test)
 
