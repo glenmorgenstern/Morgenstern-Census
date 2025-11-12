@@ -5,7 +5,7 @@ from ucimlrepo import fetch_ucirepo
 # fetch dataset 
 us_census_data_1990 = fetch_ucirepo(id=116) 
 
-# This project uses the 1990 U.S. Census dataset from the UCI Machine Learning Repository to model marital status (iMarital). The dataset was chosen because it is large, diverse, and rich in demographic and socioeconomic variables, making it ideal for supervised learning. The goal is to identify which attributes (e.g., age, income, education, occupation) are predictive of marital status and to compare the performance of several classical machine learning models. This analysis provides insight into social patterns while demonstrating applied ML methodology.
+# This project uses the 1990 U.S. Census dataset from the UCI Machine Learning Repository to model commute time to work (dTravtime). The dataset was chosen because it is large, diverse, and rich in demographic and socioeconomic variables, making it ideal for supervised learning. The goal is to identify which attributes (e.g., age, income, education, occupation) are predictive of commute time and to compare the performance of several classical machine learning models. This analysis provides insight into social patterns while demonstrating applied ML methodology.
 
 
 # %%  
@@ -51,7 +51,57 @@ categorical_vars = [
 ]
 numeric_vars = [col for col in X.columns if col not in categorical_vars]
 
-#  Step 3: EDA 
+# Define numeric and categorical variables from top features
+numeric_features = [
+    "dDepart", "iMeans", "dHours", "iClass", "dHour89", "iRiders",
+    "dWeek89", "dRearning", "iYearsch", "iYearwrk", "dIncome1",
+    "iLooking", "dAge", "dPwgt1", "iRPOB", "iTmpabsnt"
+]
+
+categorical_features = [
+    "dOccup", "dIndustry", "iWorklwk"
+]
+
+# Function to plot numeric features
+def plot_numeric_univariate(df, features, bins=30):
+    for col in features:
+        if col in df.columns:
+            plt.figure(figsize=(6,4))
+            sns.histplot(df[col], bins=bins, kde=False, color="steelblue")
+            plt.title(f"Distribution of {col}")
+            plt.xlabel(col)
+            plt.ylabel("Count")
+            plt.grid(True, alpha=0.3)
+            plt.show()
+
+# Function to plot categorical features
+def plot_categorical_univariate(df, features, top_n=10):
+    for col in features:
+        if col in df.columns:
+            plt.figure(figsize=(8,4))
+            counts = df[col].value_counts().nlargest(top_n)
+            sns.barplot(x=counts.index.astype(str), y=counts.values, palette="viridis")
+            plt.title(f"Top {top_n} Categories of {col}")
+            plt.xlabel(col)
+            plt.ylabel("Count")
+            plt.xticks(rotation=45)
+            plt.grid(True, alpha=0.3)
+            plt.show()
+
+plt.figure(figsize=(8,5))
+sns.countplot(x=y, palette="viridis")
+plt.xlabel("Commute Time Category (0–6)")
+plt.ylabel("Count")
+plt.title("Distribution of Commute Time Categories (dTravtime)")
+plt.grid(axis="y", alpha=0.3)
+plt.show()
+
+# Run univariate plots on your sample dataframe
+plot_numeric_univariate(df, numeric_features)
+plot_categorical_univariate(df, categorical_features)
+
+
+# Bivariate EDA 
 # Distribution of commute time categories
 sns.countplot(x=y)
 plt.xlabel("Commute time category (0–6)")
@@ -68,6 +118,61 @@ sns.boxplot(x=y, y=df['dRearning'])
 plt.title("Commute Time Category vs Earnings")
 plt.show()
 
+from scipy.stats import f_oneway, chi2_contingency
+
+# Target variable
+y = df['dTravtime'].astype('category')
+
+# Separate numeric and categorical predictors
+numeric_features = [
+    "dDepart","iMeans","dHours","iClass","dHour89","iRiders",
+    "dWeek89","dRearning","iYearsch","iYearwrk","dIncome1",
+    "iLooking","dAge","dPwgt1","iRPOB","iTmpabsnt"
+]
+
+categorical_features = ["dOccup","dIndustry","iWorklwk"]
+
+# ANOVA for numeric predictors vs. commute time
+anova_results = {}
+for col in numeric_features:
+    if col in df.columns:
+        groups = [df[col][y==cat] for cat in y.cat.categories]
+        try:
+            fstat, pval = f_oneway(*groups)
+            anova_results[col] = pval
+        except Exception:
+            anova_results[col] = np.nan
+
+print("ANOVA p-values (numeric predictors vs. commute time):")
+print(pd.Series(anova_results).sort_values())
+
+# Chi-square for categorical predictors vs. commute time
+chi2_results = {}
+for col in categorical_features:
+    if col in df.columns:
+        table = pd.crosstab(df[col].astype(str), y.astype(str))
+        try:
+            chi2, pval, _, _ = chi2_contingency(table)
+            chi2_results[col] = pval
+        except Exception:
+            chi2_results[col] = np.nan
+
+print("\nChi-square p-values (categorical predictors vs. commute time):")
+print(pd.Series(chi2_results).sort_values())
+
+import seaborn as sns
+import matplotlib.pyplot as plt
+
+# Compute correlation matrix for numeric features
+numeric_df = df[numeric_features].dropna()
+corr_matrix = numeric_df.corr(method="pearson")
+
+# Plot heatmap
+plt.figure(figsize=(10,8))
+sns.heatmap(corr_matrix, annot=True, cmap="coolwarm", center=0)
+plt.title("Pearson Correlation Heatmap (Numeric Predictors)")
+plt.show()
+
 # %% 
 # Multinomial Logistic Regression with Backward Stepwise Selection
 import warnings
@@ -82,10 +187,10 @@ from sklearn.metrics import accuracy_score, classification_report
 from scipy.stats import f_oneway, chi2_contingency
 from collections import Counter
 
-#  Step 1: Sample 50,000 rows 
+# Step 1: Sample 50,000 rows
 df_sample = df.sample(n=50000, random_state=42)
 
-#  Step 2: Collapse high-cardinality categorical variables 
+# Step 2: Collapse high-cardinality categorical variables
 def collapse_categories(series, top_n=4):
     top_cats = series.value_counts().nlargest(top_n).index
     return series.where(series.isin(top_cats), other='Other')
@@ -94,11 +199,27 @@ for col in ['dIndustry','dOccup','dAncstry1','dAncstry2','iLang1']:
     if col in df_sample.columns:
         df_sample[col] = collapse_categories(df_sample[col], top_n=4)
 
-#  Step 3: Target and predictors 
+# Ensure categorical columns are all strings
+for col in ['dIndustry','dOccup','dAncstry1','dAncstry2','iLang1']:
+    if col in df_sample.columns:
+        df_sample[col] = collapse_categories(df_sample[col], top_n=4).astype(str)
+
+# Also cast other categorical predictors to string
+categorical_vars = [
+    "iSex", "dOccup", "dIndustry", "dAncstry1", "dAncstry2",
+    "dHispanic", "dPOB", "iCitizen", "iEnglish", "iLang1",
+    "iMilitary", "iSchool", "iWorklwk", "iDisabl1",
+    "iDisabl2", "iMobillim", "iVietnam", "iWWII"
+]
+for col in categorical_vars:
+    if col in df_sample.columns:
+        df_sample[col] = df_sample[col].astype(str)
+
+# Step 3: Target and predictors
 y = df_sample['dTravtime'].astype('category')
 predictors = [col for col in df_sample.columns if col not in ['dTravtime','caseid']]
 
-#  Step 4: Pre-screen predictors 
+# Step 4: Pre-screen predictors
 scores = {}
 for col in predictors:
     if pd.api.types.is_numeric_dtype(df_sample[col]):
@@ -116,19 +237,19 @@ for col in predictors:
         except Exception:
             scores[col] = 1.0
 
-#  Step 5: Select top 20 predictors 
+# Step 5: Select top 20 predictors
 top_predictors = sorted(scores, key=scores.get)[:20]
 print("Top 20 predictors:", top_predictors)
 
-#  Step 6: One-hot encode 
-X = pd.get_dummies(df_sample[top_predictors], drop_first=True)
+# Step 6: Build design matrix using top predictors
+X = df_sample[top_predictors]
 y_codes = y.cat.codes
 
-#  Step 7: Balance classes (undersample majority) 
+# Step 7: Balance classes (undersample majority)
 counts = Counter(y_codes)
 min_count = min(counts.values())
 balanced_idx = np.hstack([
-    np.random.choice(np.where(y_codes==cls)[0], min_count, replace=False)
+    np.random.choice(np.where(y_codes == cls)[0], min_count, replace=False)
     for cls in counts.keys()
 ])
 X_balanced = X.iloc[balanced_idx]
@@ -136,22 +257,52 @@ y_balanced = y_codes.iloc[balanced_idx]
 
 print("Balanced class counts:", Counter(y_balanced))
 
-#  Step 8: Train/test split 
+# Step 8: Train/test split
 X_train, X_test, y_train, y_test = train_test_split(
     X_balanced, y_balanced, test_size=0.2, random_state=42, stratify=y_balanced
 )
 
-#  Step 9: Initial model 
-clf = LogisticRegression(multi_class="multinomial", solver="lbfgs", penalty="l2", max_iter=500)
-clf.fit(X_train, y_train)
-init_acc = accuracy_score(y_test, clf.predict(X_test))
+# Step 9: Build preprocessing pipeline (restricted to available predictors)
+def make_pipeline(predictor_list):
+    categorical_vars = [col for col in predictor_list if col in [
+        "iSex", "dOccup", "dIndustry", "dAncstry1", "dAncstry2",
+        "dHispanic", "dPOB", "iCitizen", "iEnglish", "iLang1",
+        "iMilitary", "iSchool", "iWorklwk", "iDisabl1",
+        "iDisabl2", "iMobillim", "iVietnam", "iWWII"
+    ]]
+    numeric_vars = [col for col in predictor_list if col not in categorical_vars]
+
+    from sklearn.preprocessing import StandardScaler, OneHotEncoder
+    from sklearn.compose import ColumnTransformer
+    from sklearn.pipeline import Pipeline
+
+    preprocessor = ColumnTransformer(
+        transformers=[
+            ("num", StandardScaler(), numeric_vars),
+            ("cat", OneHotEncoder(handle_unknown="ignore"), categorical_vars)
+        ]
+    )
+
+    pipeline = Pipeline(steps=[
+        ("preprocess", preprocessor),
+        ("model", LogisticRegression(
+            multi_class="multinomial", solver="lbfgs", penalty="l2", max_iter=500))
+    ])
+    return pipeline
+
+# Initial model
+logit_pipeline = make_pipeline(list(X_train.columns))
+logit_pipeline.fit(X_train, y_train)
+init_acc = accuracy_score(y_test, logit_pipeline.predict(X_test))
 print("Initial accuracy with 20 predictors (balanced):", init_acc)
 
-#  Step 10: Backward stepwise selection (down to 2 predictors) 
+# Step 10: Backward stepwise selection
 def backward_stepwise(X_train, y_train, X_test, y_test, threshold=0.001, min_vars=2):
     included = list(X_train.columns)
     acc_history = []
-    best_acc = accuracy_score(y_test, clf.predict(X_test))
+    pipeline = make_pipeline(included)
+    pipeline.fit(X_train, y_train)
+    best_acc = accuracy_score(y_test, pipeline.predict(X_test))
     acc_history.append((len(included), best_acc, included.copy()))
 
     improved = True
@@ -159,10 +310,9 @@ def backward_stepwise(X_train, y_train, X_test, y_test, threshold=0.001, min_var
         improved = False
         for col in included:
             trial = [c for c in included if c != col]
-            model = LogisticRegression(
-                multi_class="multinomial", solver="lbfgs", penalty="l2", max_iter=500
-            ).fit(X_train[trial], y_train)
-            acc = accuracy_score(y_test, model.predict(X_test[trial]))
+            trial_pipeline = make_pipeline(trial)
+            trial_pipeline.fit(X_train[trial], y_train)
+            acc = accuracy_score(y_test, trial_pipeline.predict(X_test[trial]))
             if acc >= best_acc - threshold:
                 included.remove(col)
                 best_acc = acc
@@ -174,7 +324,7 @@ def backward_stepwise(X_train, y_train, X_test, y_test, threshold=0.001, min_var
 
 acc_history = backward_stepwise(X_train, y_train, X_test, y_test, min_vars=2)
 
-#  Step 11: Plot accuracy vs. predictors retained 
+# Step 11: Plot accuracy vs. predictors retained
 steps, accs, _ = zip(*acc_history)
 plt.figure(figsize=(8,5))
 plt.plot(steps, accs, marker='o')
@@ -185,17 +335,18 @@ plt.title("Backward Stepwise Selection (Balanced, 50k): Accuracy vs. Predictors"
 plt.grid(True)
 plt.show()
 
-#  Step 12: Extract best model 
+# Step 12: Extract best model
 best_step = max(acc_history, key=lambda x: x[1])
 best_vars = best_step[2]
 print("Best model predictors:", best_vars)
 print("Best model accuracy:", best_step[1])
 
-best_model = LogisticRegression(
-    multi_class="multinomial", solver="lbfgs", penalty="l2", max_iter=500
-).fit(X_train[best_vars], y_train)
+best_pipeline = make_pipeline(best_vars)
+best_pipeline.fit(X_train[best_vars], y_train)
 
-coef_df = pd.DataFrame(best_model.coef_, columns=X_train[best_vars].columns)
+# Coefficient table
+best_model = best_pipeline.named_steps["model"]
+coef_df = pd.DataFrame(best_model.coef_, columns=best_pipeline.named_steps["preprocess"].get_feature_names_out())
 coef_df.index = [f"Class {c}" for c in best_model.classes_]
 print("Coefficient table for best model (balanced, 50k):")
 print(coef_df)
@@ -203,25 +354,17 @@ print(coef_df)
 # ROC curves for best model
 from sklearn.preprocessing import label_binarize
 from sklearn.metrics import roc_curve, auc
-import matplotlib.pyplot as plt
-import numpy as np
 
-#  Step 1: Binarize labels for OvR 
 y_test_bin = label_binarize(y_test, classes=np.unique(y_test))
+y_score = best_pipeline.predict_proba(X_test[best_vars])
 
-#  Step 2: Get predicted probabilities from best model 
-y_score = best_model.predict_proba(X_test[best_vars])
-
-#  Step 3: Compute ROC curves for each class 
 fpr, tpr, roc_auc = {}, {}, {}
 plt.figure(figsize=(8,6))
-
 for i in range(y_test_bin.shape[1]):
     fpr[i], tpr[i], _ = roc_curve(y_test_bin[:, i], y_score[:, i])
     roc_auc[i] = auc(fpr[i], tpr[i])
     plt.plot(fpr[i], tpr[i], label=f"Class {i} (AUC = {roc_auc[i]:.2f})")
 
-#  Step 4: Plot baseline and finalize 
 plt.plot([0,1],[0,1],'k--')
 plt.xlabel("False Positive Rate")
 plt.ylabel("True Positive Rate")
@@ -242,12 +385,14 @@ warnings.filterwarnings("ignore")
 
 import pandas as pd
 import numpy as np
+import matplotlib.pyplot as plt
 from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import StandardScaler, label_binarize
+from sklearn.metrics import accuracy_score, f1_score, classification_report, roc_curve, auc
+from sklearn.preprocessing import StandardScaler, OneHotEncoder, label_binarize
+from sklearn.compose import ColumnTransformer
+from sklearn.pipeline import Pipeline
 from sklearn.decomposition import PCA
 from sklearn.neighbors import KNeighborsClassifier
-from sklearn.metrics import accuracy_score, f1_score, classification_report, roc_curve, auc
-import matplotlib.pyplot as plt
 from collections import Counter
 
 # Step 1: Sample 50,000 rows
@@ -260,21 +405,30 @@ def collapse_categories(series, top_n=4):
 
 for col in ['dIndustry','dOccup','dAncstry1','dAncstry2','iLang1']:
     if col in df_sample.columns:
-        df_sample[col] = collapse_categories(df_sample[col], top_n=4)
+        df_sample[col] = collapse_categories(df_sample[col], top_n=4).astype(str)
+
+# Cast other categorical predictors to string
+categorical_vars_master = [
+    "iSex", "dOccup", "dIndustry", "dAncstry1", "dAncstry2",
+    "dHispanic", "dPOB", "iCitizen", "iEnglish", "iLang1",
+    "iMilitary", "iSchool", "iWorklwk", "iDisabl1",
+    "iDisabl2", "iMobillim", "iVietnam", "iWWII"
+]
+for col in categorical_vars_master:
+    if col in df_sample.columns:
+        df_sample[col] = df_sample[col].astype(str)
 
 # Step 3: Target and predictors
 y = df_sample['dTravtime'].astype('category')
 predictors = [col for col in df_sample.columns if col not in ['dTravtime','caseid']]
-
-# Step 4: One-hot encode
-X = pd.get_dummies(df_sample[predictors], drop_first=True)
+X = df_sample[predictors]
 y_codes = y.cat.codes
 
-# Step 5: Balance classes (undersample majority)
+# Step 4: Balance classes (undersample majority)
 counts = Counter(y_codes)
 min_count = min(counts.values())
 balanced_idx = np.hstack([
-    np.random.choice(np.where(y_codes==cls)[0], min_count, replace=False)
+    np.random.choice(np.where(y_codes == cls)[0], min_count, replace=False)
     for cls in counts.keys()
 ])
 X_balanced = X.iloc[balanced_idx]
@@ -282,50 +436,39 @@ y_balanced = y_codes.iloc[balanced_idx]
 
 print("Balanced class counts:", Counter(y_balanced))
 
-# Step 6: Scale predictors
-scaler = StandardScaler()
-X_scaled = scaler.fit_transform(X_balanced)
-
-# Step 7: PCA (retain 95% variance)
-pca = PCA(n_components=0.95, random_state=42)
-X_pca = pca.fit_transform(X_scaled)
-print("Number of PCA components retained:", X_pca.shape[1])
-
-#  PCA Visualization 1: Cumulative explained variance 
-cum_var = np.cumsum(pca.explained_variance_ratio_)
-plt.figure(figsize=(8,5))
-plt.plot(range(1, len(cum_var)+1), cum_var, marker='o')
-plt.axhline(y=0.95, color='r', linestyle='--', label='95% threshold')
-plt.xlabel("Number of Principal Components")
-plt.ylabel("Cumulative Explained Variance")
-plt.title("Cumulative Explained Variance by PCA Components")
-plt.legend()
-plt.grid(True)
-plt.show()
-
-#  PCA Visualization 2: Scatterplot of first two PCs 
-plt.figure(figsize=(8,6))
-scatter = plt.scatter(X_pca[:,0], X_pca[:,1], c=y_balanced, cmap='tab10', alpha=0.6)
-plt.xlabel("PC1")
-plt.ylabel("PC2")
-plt.title("Scatterplot of First Two Principal Components")
-plt.colorbar(scatter, label="Commute Category")
-plt.show()
-
-# Step 8: Train/test split
+# Step 5: Train/test split
 X_train, X_test, y_train, y_test = train_test_split(
-    X_pca, y_balanced, test_size=0.2, random_state=42, stratify=y_balanced
+    X_balanced, y_balanced, test_size=0.2, random_state=42, stratify=y_balanced
 )
 
-# Step 9: Hyperparameter tuning for n_neighbors
+# Step 6: Build preprocessing pipeline
+def make_pipeline_knn(predictor_list, n_neighbors=5):
+    categorical_vars = [col for col in predictor_list if col in categorical_vars_master]
+    numeric_vars = [col for col in predictor_list if col not in categorical_vars]
+
+    preprocessor = ColumnTransformer(
+        transformers=[
+            ("num", StandardScaler(), numeric_vars),
+            ("cat", OneHotEncoder(handle_unknown="ignore"), categorical_vars)
+        ]
+    )
+
+    pipeline = Pipeline(steps=[
+        ("preprocess", preprocessor),
+        ("pca", PCA(n_components=0.95, random_state=42)),  # retain 95% variance
+        ("model", KNeighborsClassifier(n_neighbors=n_neighbors, weights="distance"))
+    ])
+    return pipeline
+
+# Step 7: Hyperparameter tuning for n_neighbors
 results = []
 best_model = None
 best_f1 = -1
 
 for k in [3, 5, 7, 9]:
-    knn = KNeighborsClassifier(n_neighbors=k, weights="distance")
-    knn.fit(X_train, y_train)
-    y_pred = knn.predict(X_test)
+    knn_pipeline = make_pipeline_knn(list(X_train.columns), n_neighbors=k)
+    knn_pipeline.fit(X_train, y_train)
+    y_pred = knn_pipeline.predict(X_test)
     acc = accuracy_score(y_test, y_pred)
     macro_f1 = f1_score(y_test, y_pred, average="macro")
     results.append((k, acc, macro_f1))
@@ -336,9 +479,9 @@ for k in [3, 5, 7, 9]:
     print(classification_report(y_test, y_pred))
     if macro_f1 > best_f1:
         best_f1 = macro_f1
-        best_model = knn
+        best_model = knn_pipeline
 
-# Step 10: ROC curves for best model
+# Step 8: ROC curves for best model
 y_test_bin = label_binarize(y_test, classes=np.unique(y_test))
 y_score = best_model.predict_proba(X_test)
 
@@ -456,43 +599,55 @@ plt.show()
 
 # %%
 # Random Forest
+# Random Forest with standardized preprocessing
 import warnings
 warnings.filterwarnings("ignore")
 
 import pandas as pd
 import numpy as np
-from sklearn.model_selection import train_test_split, GridSearchCV
-from sklearn.preprocessing import label_binarize
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import accuracy_score, classification_report, roc_curve, auc
 import matplotlib.pyplot as plt
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import accuracy_score, f1_score, classification_report, roc_curve, auc
+from sklearn.preprocessing import StandardScaler, OneHotEncoder, label_binarize
+from sklearn.compose import ColumnTransformer
+from sklearn.pipeline import Pipeline
+from sklearn.ensemble import RandomForestClassifier
 from collections import Counter
 
-#  Step 1: Sample 100,000 rows 
+# Step 1: Sample 100,000 rows (RF can handle larger sample sizes)
 df_sample = df.sample(n=100000, random_state=42)
 
-#  Step 2: Collapse high-cardinality categorical variables 
+# Step 2: Collapse high-cardinality categorical variables
 def collapse_categories(series, top_n=4):
     top_cats = series.value_counts().nlargest(top_n).index
     return series.where(series.isin(top_cats), other='Other')
 
 for col in ['dIndustry','dOccup','dAncstry1','dAncstry2','iLang1']:
     if col in df_sample.columns:
-        df_sample[col] = collapse_categories(df_sample[col], top_n=4)
+        df_sample[col] = collapse_categories(df_sample[col], top_n=4).astype(str)
 
-#  Step 3: Target and predictors 
+# Cast other categorical predictors to string
+categorical_vars_master = [
+    "iSex", "dOccup", "dIndustry", "dAncstry1", "dAncstry2",
+    "dHispanic", "dPOB", "iCitizen", "iEnglish", "iLang1",
+    "iMilitary", "iSchool", "iWorklwk", "iDisabl1",
+    "iDisabl2", "iMobillim", "iVietnam", "iWWII"
+]
+for col in categorical_vars_master:
+    if col in df_sample.columns:
+        df_sample[col] = df_sample[col].astype(str)
+
+# Step 3: Target and predictors
 y = df_sample['dTravtime'].astype('category')
 predictors = [col for col in df_sample.columns if col not in ['dTravtime','caseid']]
-
-#  Step 4: One-hot encode 
-X = pd.get_dummies(df_sample[predictors], drop_first=True)
+X = df_sample[predictors]
 y_codes = y.cat.codes
 
-#  Step 5: Balance classes (undersample majority) 
+# Step 4: Balance classes (undersample majority)
 counts = Counter(y_codes)
 min_count = min(counts.values())
 balanced_idx = np.hstack([
-    np.random.choice(np.where(y_codes==cls)[0], min_count, replace=False)
+    np.random.choice(np.where(y_codes == cls)[0], min_count, replace=False)
     for cls in counts.keys()
 ])
 X_balanced = X.iloc[balanced_idx]
@@ -500,40 +655,50 @@ y_balanced = y_codes.iloc[balanced_idx]
 
 print("Balanced class counts:", Counter(y_balanced))
 
-#  Step 6: Train/test split 
+# Step 5: Train/test split
 X_train, X_test, y_train, y_test = train_test_split(
     X_balanced, y_balanced, test_size=0.2, random_state=42, stratify=y_balanced
 )
 
-#  Step 7: Hyperparameter tuning with CV 
-param_grid = {
-    "n_estimators": [100, 200],
-    "max_depth": [10, 20, None],
-    "min_samples_leaf": [5, 10]
-}
+# Step 6: Build preprocessing + RF pipeline
+def make_pipeline_rf(predictor_list, n_estimators=200, max_depth=15):
+    categorical_vars = [col for col in predictor_list if col in categorical_vars_master]
+    numeric_vars = [col for col in predictor_list if col not in categorical_vars]
 
-grid = GridSearchCV(
-    RandomForestClassifier(random_state=42, n_jobs=-1),
-    param_grid,
-    cv=3,
-    scoring="f1_macro"
-)
-grid.fit(X_train, y_train)
+    preprocessor = ColumnTransformer(
+        transformers=[
+            ("num", StandardScaler(), numeric_vars),
+            ("cat", OneHotEncoder(handle_unknown="ignore"), categorical_vars)
+        ]
+    )
 
-best_rf = grid.best_estimator_
-print("Best parameters:", grid.best_params_)
-print("Best macro F1 (CV):", grid.best_score_)
+    pipeline = Pipeline(steps=[
+        ("preprocess", preprocessor),
+        ("model", RandomForestClassifier(
+            n_estimators=n_estimators,
+            max_depth=max_depth,
+            random_state=42,
+            n_jobs=-1
+        ))
+    ])
+    return pipeline
 
-#  Step 8: Evaluate best model 
-y_pred = best_rf.predict(X_test)
+# Step 7: Fit and evaluate
+rf_pipeline = make_pipeline_rf(list(X_train.columns))
+rf_pipeline.fit(X_train, y_train)
+y_pred = rf_pipeline.predict(X_test)
+
 acc = accuracy_score(y_test, y_pred)
-print("Random Forest test accuracy:", acc)
+macro_f1 = f1_score(y_test, y_pred, average="macro")
+print("\nRandom Forest Results")
+print("Test accuracy:", acc)
+print("Macro F1:", macro_f1)
 print("Classification report:")
 print(classification_report(y_test, y_pred))
 
-#  Step 9: ROC curves (OvR) 
+# Step 8: ROC curves
 y_test_bin = label_binarize(y_test, classes=np.unique(y_test))
-y_score = best_rf.predict_proba(X_test)
+y_score = rf_pipeline.predict_proba(X_test)
 
 fpr, tpr, roc_auc = {}, {}, {}
 plt.figure(figsize=(8,6))
@@ -549,15 +714,15 @@ plt.title("Multiclass ROC (OvR) for Random Forest")
 plt.legend()
 plt.show()
 
-#  Step 10: Feature importance plot 
-importances = best_rf.feature_importances_
-indices = np.argsort(importances)[::-1][:20]  # top 20 features
+# Step 9: Feature importance
+model = rf_pipeline.named_steps["model"]
+importances = model.feature_importances_
+feature_names = rf_pipeline.named_steps["preprocess"].get_feature_names_out()
 
-plt.figure(figsize=(10,6))
-plt.bar(range(len(indices)), importances[indices], align="center")
-plt.xticks(range(len(indices)), [X_train.columns[i] for i in indices], rotation=90)
-plt.title("Top 20 Feature Importances (Random Forest)")
-plt.show()
+feat_imp = pd.DataFrame({"feature": feature_names, "importance": importances})
+feat_imp = feat_imp.sort_values("importance", ascending=False).head(20)
+print("\nTop 20 Feature Importances:")
+print(feat_imp)
 
 # %%
 # Gradient Boosting
@@ -566,38 +731,49 @@ warnings.filterwarnings("ignore")
 
 import pandas as pd
 import numpy as np
-from sklearn.model_selection import train_test_split, GridSearchCV
-from sklearn.preprocessing import label_binarize
-from sklearn.metrics import accuracy_score, classification_report, roc_curve, auc
 import matplotlib.pyplot as plt
-from collections import Counter
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import accuracy_score, f1_score, classification_report, roc_curve, auc
+from sklearn.preprocessing import StandardScaler, OneHotEncoder, label_binarize
+from sklearn.compose import ColumnTransformer
+from sklearn.pipeline import Pipeline
 from xgboost import XGBClassifier
+from collections import Counter
 
-#  Step 1: Sample 100,000 rows 
+# Step 1: Sample 100,000 rows (XGB can handle larger sample sizes)
 df_sample = df.sample(n=100000, random_state=42)
 
-#  Step 2: Collapse high-cardinality categorical variables 
+# Step 2: Collapse high-cardinality categorical variables
 def collapse_categories(series, top_n=4):
     top_cats = series.value_counts().nlargest(top_n).index
     return series.where(series.isin(top_cats), other='Other')
 
 for col in ['dIndustry','dOccup','dAncstry1','dAncstry2','iLang1']:
     if col in df_sample.columns:
-        df_sample[col] = collapse_categories(df_sample[col], top_n=4)
+        df_sample[col] = collapse_categories(df_sample[col], top_n=4).astype(str)
 
-#  Step 3: Target and predictors 
+# Cast other categorical predictors to string
+categorical_vars_master = [
+    "iSex", "dOccup", "dIndustry", "dAncstry1", "dAncstry2",
+    "dHispanic", "dPOB", "iCitizen", "iEnglish", "iLang1",
+    "iMilitary", "iSchool", "iWorklwk", "iDisabl1",
+    "iDisabl2", "iMobillim", "iVietnam", "iWWII"
+]
+for col in categorical_vars_master:
+    if col in df_sample.columns:
+        df_sample[col] = df_sample[col].astype(str)
+
+# Step 3: Target and predictors
 y = df_sample['dTravtime'].astype('category')
-predictors = [c for c in df_sample.columns if c not in ['dTravtime','caseid']]
-
-#  Step 4: One-hot encode 
-X = pd.get_dummies(df_sample[predictors], drop_first=True)
+predictors = [col for col in df_sample.columns if col not in ['dTravtime','caseid']]
+X = df_sample[predictors]
 y_codes = y.cat.codes
 
-#  Step 5: Balance classes (undersample majority) 
+# Step 4: Balance classes (undersample majority)
 counts = Counter(y_codes)
 min_count = min(counts.values())
 balanced_idx = np.hstack([
-    np.random.choice(np.where(y_codes==cls)[0], min_count, replace=False)
+    np.random.choice(np.where(y_codes == cls)[0], min_count, replace=False)
     for cls in counts.keys()
 ])
 X_balanced = X.iloc[balanced_idx]
@@ -605,52 +781,54 @@ y_balanced = y_codes.iloc[balanced_idx]
 
 print("Balanced class counts:", Counter(y_balanced))
 
-#  Step 6: Train/test split 
+# Step 5: Train/test split
 X_train, X_test, y_train, y_test = train_test_split(
     X_balanced, y_balanced, test_size=0.2, random_state=42, stratify=y_balanced
 )
 
-#  Step 7: Hyperparameter tuning with CV 
-param_grid = {
-    "n_estimators": [300, 500],
-    "learning_rate": [0.05, 0.1],
-    "max_depth": [3, 5],
-    "subsample": [0.7, 1.0],
-    "colsample_bytree": [0.7, 1.0]
-}
+# Step 6: Build preprocessing + XGB pipeline
+def make_pipeline_xgb(predictor_list, n_estimators=300, learning_rate=0.1, max_depth=6):
+    categorical_vars = [col for col in predictor_list if col in categorical_vars_master]
+    numeric_vars = [col for col in predictor_list if col not in categorical_vars]
 
-xgb = XGBClassifier(
-    objective="multi:softprob",
-    num_class=len(np.unique(y_balanced)),
-    eval_metric="mlogloss",
-    use_label_encoder=False,
-    random_state=42,
-    n_jobs=-1
-)
+    preprocessor = ColumnTransformer(
+        transformers=[
+            ("num", StandardScaler(), numeric_vars),
+            ("cat", OneHotEncoder(handle_unknown="ignore"), categorical_vars)
+        ]
+    )
 
-grid = GridSearchCV(
-    xgb,
-    param_grid,
-    cv=3,
-    scoring="f1_macro",
-    n_jobs=-1
-)
-grid.fit(X_train, y_train)
+    pipeline = Pipeline(steps=[
+        ("preprocess", preprocessor),
+        ("model", XGBClassifier(
+            n_estimators=n_estimators,
+            learning_rate=learning_rate,
+            max_depth=max_depth,
+            subsample=0.8,
+            colsample_bytree=0.8,
+            random_state=42,
+            use_label_encoder=False,
+            eval_metric="mlogloss"
+        ))
+    ])
+    return pipeline
 
-best_xgb = grid.best_estimator_
-print("Best parameters:", grid.best_params_)
-print("Best macro F1 (CV):", grid.best_score_)
+# Step 7: Fit and evaluate
+xgb_pipeline = make_pipeline_xgb(list(X_train.columns))
+xgb_pipeline.fit(X_train, y_train)
+y_pred = xgb_pipeline.predict(X_test)
 
-#  Step 8: Evaluate best model 
-y_pred = best_xgb.predict(X_test)
 acc = accuracy_score(y_test, y_pred)
-print("XGBoost test accuracy:", acc)
+macro_f1 = f1_score(y_test, y_pred, average="macro")
+print("\nXGBoost Results")
+print("Test accuracy:", acc)
+print("Macro F1:", macro_f1)
 print("Classification report:")
 print(classification_report(y_test, y_pred))
 
-#  Step 9: ROC curves (OvR) 
+# Step 8: ROC curves
 y_test_bin = label_binarize(y_test, classes=np.unique(y_test))
-y_score = best_xgb.predict_proba(X_test)
+y_score = xgb_pipeline.predict_proba(X_test)
 
 fpr, tpr, roc_auc = {}, {}, {}
 plt.figure(figsize=(8,6))
@@ -666,56 +844,68 @@ plt.title("Multiclass ROC (OvR) for XGBoost")
 plt.legend()
 plt.show()
 
-import matplotlib.pyplot as plt
-from xgboost import plot_importance
+# Step 9: Feature importance
+model = xgb_pipeline.named_steps["model"]
+importances = model.feature_importances_
+feature_names = xgb_pipeline.named_steps["preprocess"].get_feature_names_out()
 
-# Plot top 20 features ranked by gain
-plt.figure(figsize=(10,8))
-plot_importance(best_xgb, importance_type='gain', max_num_features=20, height=0.6)
-plt.title("Top 20 Feature Importances by Gain (XGBoost)")
-plt.tight_layout()
-plt.show()
+feat_imp = pd.DataFrame({"feature": feature_names, "importance": importances})
+feat_imp = feat_imp.sort_values("importance", ascending=False).head(20)
+print("\nTop 20 Feature Importances:")
+print(feat_imp)
 
 # %%
 # SVM with PCA
+# Support Vector Machine (SVM) with standardized preprocessing
 import warnings
 warnings.filterwarnings("ignore")
 
 import pandas as pd
 import numpy as np
-from sklearn.model_selection import train_test_split, GridSearchCV
-from sklearn.preprocessing import StandardScaler, label_binarize
+import matplotlib.pyplot as plt
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import accuracy_score, f1_score, classification_report, roc_curve, auc
+from sklearn.preprocessing import StandardScaler, OneHotEncoder, label_binarize
+from sklearn.compose import ColumnTransformer
+from sklearn.pipeline import Pipeline
 from sklearn.decomposition import PCA
 from sklearn.svm import SVC
-from sklearn.metrics import accuracy_score, classification_report, roc_curve, auc, f1_score
-import matplotlib.pyplot as plt
 from collections import Counter
 
-#  Step 1: Sample 100,000 rows 
-df_sample = df.sample(n=100000, random_state=42)
+# Step 1: Sample 50,000 rows (SVM is computationally heavier)
+df_sample = df.sample(n=50000, random_state=42)
 
-#  Step 2: Collapse high-cardinality categorical variables 
+# Step 2: Collapse high-cardinality categorical variables
 def collapse_categories(series, top_n=4):
     top_cats = series.value_counts().nlargest(top_n).index
     return series.where(series.isin(top_cats), other='Other')
 
 for col in ['dIndustry','dOccup','dAncstry1','dAncstry2','iLang1']:
     if col in df_sample.columns:
-        df_sample[col] = collapse_categories(df_sample[col], top_n=4)
+        df_sample[col] = collapse_categories(df_sample[col], top_n=4).astype(str)
 
-#  Step 3: Target and predictors 
+# Cast other categorical predictors to string
+categorical_vars_master = [
+    "iSex", "dOccup", "dIndustry", "dAncstry1", "dAncstry2",
+    "dHispanic", "dPOB", "iCitizen", "iEnglish", "iLang1",
+    "iMilitary", "iSchool", "iWorklwk", "iDisabl1",
+    "iDisabl2", "iMobillim", "iVietnam", "iWWII"
+]
+for col in categorical_vars_master:
+    if col in df_sample.columns:
+        df_sample[col] = df_sample[col].astype(str)
+
+# Step 3: Target and predictors
 y = df_sample['dTravtime'].astype('category')
-predictors = [c for c in df_sample.columns if c not in ['dTravtime','caseid']]
-
-#  Step 4: One-hot encode 
-X = pd.get_dummies(df_sample[predictors], drop_first=True)
+predictors = [col for col in df_sample.columns if col not in ['dTravtime','caseid']]
+X = df_sample[predictors]
 y_codes = y.cat.codes
 
-#  Step 5: Balance classes (undersample majority) 
+# Step 4: Balance classes (undersample majority)
 counts = Counter(y_codes)
 min_count = min(counts.values())
 balanced_idx = np.hstack([
-    np.random.choice(np.where(y_codes==cls)[0], min_count, replace=False)
+    np.random.choice(np.where(y_codes == cls)[0], min_count, replace=False)
     for cls in counts.keys()
 ])
 X_balanced = X.iloc[balanced_idx]
@@ -723,51 +913,46 @@ y_balanced = y_codes.iloc[balanced_idx]
 
 print("Balanced class counts:", Counter(y_balanced))
 
-#  Step 6: Scale predictors 
-scaler = StandardScaler()
-X_scaled = scaler.fit_transform(X_balanced)
-
-#  Step 7: PCA (retain 95% variance) 
-pca = PCA(n_components=0.95, random_state=42)
-X_pca = pca.fit_transform(X_scaled)
-print("Number of PCA components retained:", X_pca.shape[1])
-
-#  Step 8: Train/test split 
+# Step 5: Train/test split
 X_train, X_test, y_train, y_test = train_test_split(
-    X_pca, y_balanced, test_size=0.2, random_state=42, stratify=y_balanced
+    X_balanced, y_balanced, test_size=0.2, random_state=42, stratify=y_balanced
 )
 
-#  Step 9: Expanded hyperparameter grid for SVM (RBF kernel) 
-param_grid = {
-    "C": [0.1, 0.5, 1, 5, 10, 20],
-    "gamma": [0.001, 0.005, 0.01, 0.1, "scale"]
-}
+# Step 6: Build preprocessing + PCA + SVM pipeline
+def make_pipeline_svm(predictor_list, C=1.0, gamma="scale"):
+    categorical_vars = [col for col in predictor_list if col in categorical_vars_master]
+    numeric_vars = [col for col in predictor_list if col not in categorical_vars]
 
-svm = SVC(kernel="rbf", probability=True, class_weight="balanced", random_state=42)
+    preprocessor = ColumnTransformer(
+        transformers=[
+            ("num", StandardScaler(), numeric_vars),
+            ("cat", OneHotEncoder(handle_unknown="ignore"), categorical_vars)
+        ]
+    )
 
-grid = GridSearchCV(
-    estimator=svm,
-    param_grid=param_grid,
-    cv=3,
-    scoring="f1_macro",
-    n_jobs=-1
-)
-grid.fit(X_train, y_train)
+    pipeline = Pipeline(steps=[
+        ("preprocess", preprocessor),
+        ("pca", PCA(n_components=0.95, random_state=42)),  # retain 95% variance
+        ("model", SVC(kernel="rbf", C=C, gamma=gamma, probability=True, random_state=42))
+    ])
+    return pipeline
 
-best_svm = grid.best_estimator_
-print("Best parameters:", grid.best_params_)
-print("Best macro F1 (CV):", grid.best_score_)
+# Step 7: Fit and evaluate
+svm_pipeline = make_pipeline_svm(list(X_train.columns))
+svm_pipeline.fit(X_train, y_train)
+y_pred = svm_pipeline.predict(X_test)
 
-#  Step 10: Evaluate best model 
-y_pred = best_svm.predict(X_test)
 acc = accuracy_score(y_test, y_pred)
-print("SVM (RBF) test accuracy:", acc)
+macro_f1 = f1_score(y_test, y_pred, average="macro")
+print("\nSVM Results")
+print("Test accuracy:", acc)
+print("Macro F1:", macro_f1)
 print("Classification report:")
 print(classification_report(y_test, y_pred))
 
-#  Step 11: ROC curves (OvR) 
+# Step 8: ROC curves
 y_test_bin = label_binarize(y_test, classes=np.unique(y_test))
-y_score = best_svm.predict_proba(X_test)
+y_score = svm_pipeline.predict_proba(X_test)
 
 fpr, tpr, roc_auc = {}, {}, {}
 plt.figure(figsize=(8,6))
@@ -779,9 +964,74 @@ for i in range(y_test_bin.shape[1]):
 plt.plot([0,1],[0,1],'k--')
 plt.xlabel("False Positive Rate")
 plt.ylabel("True Positive Rate")
-plt.title("Multiclass ROC (OvR) for Tuned SVM (RBF + PCA)")
+plt.title("Multiclass ROC (OvR) for SVM")
 plt.legend()
 plt.show()
 
 # %%
+# Compare all models
+from sklearn.metrics import accuracy_score, f1_score
 
+def compare_models(X_train, X_test, y_train, y_test):
+    results = []
+
+    #  Logistic Regression with backward stepwise selection 
+    acc_history = backward_stepwise(X_train, y_train, X_test, y_test, min_vars=2)
+    best_step = max(acc_history, key=lambda x: x[1])
+    best_vars = best_step[2]
+    best_pipeline = make_pipeline(best_vars)
+    best_pipeline.fit(X_train[best_vars], y_train)
+    y_pred = best_pipeline.predict(X_test[best_vars])
+    results.append({
+        "Model": "Multinomial Logistic Regression (Stepwise)",
+        "Accuracy": accuracy_score(y_test, y_pred),
+        "Macro F1": f1_score(y_test, y_pred, average="macro")
+    })
+
+    #  KNN 
+    knn_pipeline = make_pipeline_knn(list(X_train.columns), n_neighbors=5)
+    knn_pipeline.fit(X_train, y_train)
+    y_pred = knn_pipeline.predict(X_test)
+    results.append({
+        "Model": "KNN (k=5)",
+        "Accuracy": accuracy_score(y_test, y_pred),
+        "Macro F1": f1_score(y_test, y_pred, average="macro")
+    })
+
+    #  Random Forest 
+    rf_pipeline = make_pipeline_rf(list(X_train.columns))
+    rf_pipeline.fit(X_train, y_train)
+    y_pred = rf_pipeline.predict(X_test)
+    results.append({
+        "Model": "Random Forest",
+        "Accuracy": accuracy_score(y_test, y_pred),
+        "Macro F1": f1_score(y_test, y_pred, average="macro")
+    })
+
+    #  XGBoost 
+    xgb_pipeline = make_pipeline_xgb(list(X_train.columns))
+    xgb_pipeline.fit(X_train, y_train)
+    y_pred = xgb_pipeline.predict(X_test)
+    results.append({
+        "Model": "XGBoost",
+        "Accuracy": accuracy_score(y_test, y_pred),
+        "Macro F1": f1_score(y_test, y_pred, average="macro")
+    })
+
+    #  SVM 
+    svm_pipeline = make_pipeline_svm(list(X_train.columns))
+    svm_pipeline.fit(X_train, y_train)
+    y_pred = svm_pipeline.predict(X_test)
+    results.append({
+        "Model": "SVM (RBF)",
+        "Accuracy": accuracy_score(y_test, y_pred),
+        "Macro F1": f1_score(y_test, y_pred, average="macro")
+    })
+
+    # Convert to DataFrame for readability
+    results_df = pd.DataFrame(results)
+    return results_df
+
+results_df = compare_models(X_train, X_test, y_train, y_test)
+print(results_df)
+# %%
