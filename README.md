@@ -1,0 +1,3 @@
+- src folder: There is one .py file containing the data cleaning/modeling in the src folder. There is also the SQL code used by UC Irvine for their ML repository to discretize census variables into bins. These transformed variables were the features used in this analysis.
+- results folder: Read the FINAL RESULTS pdf. The html file contains code and the output of the models in case you want to save yourself time running the .py file yourself.
+- media: Figures used in the results pdf.
