@@ -96,7 +96,7 @@ plt.title("Distribution of Commute Time Categories (dTravtime)")
 plt.grid(axis="y", alpha=0.3)
 plt.show()
 
-# Run univariate plots on your sample dataframe
+# Run univariate plots on sample dataframe
 plot_numeric_univariate(df, numeric_features)
 plot_categorical_univariate(df, categorical_features)
 
@@ -372,11 +372,6 @@ plt.title("Multiclass ROC (OvR) for Best Multinomial Logistic Regression")
 plt.legend()
 plt.show()
 
-# We get between 32 and 39% accuracy with 12 predictors retained depending on the sampling, compared to a lower accuracy with all 20 predictors. We have not done PCA at this stage so we get the advantage of interpretability that multinomial logistic regression provides. We can see that the final multinomial model is very good at predicing the shortest commute time category (0) with AUC of 1.0, while performance for other categories is more modest (AUCs around 0.6-0.75). This suggests that while the model captures some patterns in the data, there is a lot of room for improvement to capture patterns in the other classes.
-
-# Multinomial logistic regression has served us well as a transparent baseline. It forces careful preprocessing, highlights which predictors carry signal, and produces interpretable coefficients that map cleanly to commute time categories. The backward stepwise selection and regularization helped tame collinearity and dimensionality, giving us a leaner model without sacrificing accuracy.
-# That said, the approach has limitations. It assumes linear relationships in log‑odds space, struggles with very high‑cardinality categorical variables even after collapsing, and can plateau in predictive power once the most obvious predictors are included. Runtime and convergence issues also become more pronounced as the feature space grows.
-# In short, multinomial logit is a strong pedagogical and diagnostic tool for understanding variable importance, but as we move forward, more flexible methods (KNN, gradient boosting, etc.) will capture nonlinearities and complex interactions that this model can’t.
 
 # %%
 # K-Nearest Neighbors (KNN) with PCA
@@ -499,8 +494,6 @@ plt.title("Multiclass ROC (OvR) for Best Balanced KNN Model")
 plt.legend()
 plt.show()
 
-# Our PCA cumulative explained variance plot shows that nearly 50 components are needed to capture 95% of the variance, indicating a complex feature space. That is, any one feature does not explain a bulk of the variance (the first one only explains around 10%). The scatterplot of the first two PCs reveals some clustering by commute time category, but with significant overlap, suggesting that linear separability is limited.
-# We see that k=5 gives the best test accuracy of around 30% after PCA dimensionality reduction, which is comparable to and even slightly worse than the multinomial logistic regression model earlier. The ROC curves show moderate AUC values around 0.5-0.6 for most classes, indicating the model captures some patterns but isn't really an improvement on multinomial regression. KNN benefits from PCA by reducing noise and focusing on key variance directions, but it still struggles with the complexity of predicting multiple commute time categories.
 
 # %%
 # Single Tree, pruned
